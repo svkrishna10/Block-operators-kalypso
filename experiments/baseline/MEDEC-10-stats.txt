@@ -1,0 +1,6 @@
+Dataset: MEDEC-10
+Rows: 10
+Columns: ['data', 'Text ID', 'Text', 'Sentences', 'Error Flag', 'Error Type', 'Error Sentence ID', 'Error Sentence', 'Corrected Sentence', 'Corrected Text']
+Min characters: 1209
+Max characters: 2141
+Mean characters: 1696.5

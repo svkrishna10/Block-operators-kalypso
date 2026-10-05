@@ -1,0 +1,5 @@
+Dataset: MEDEC-10
+Rows: 10
+Min chars: 1209
+Max chars: 2141
+Mean chars: 1696.5
