@@ -8,7 +8,6 @@ class OpName:
     SEM_CLASSIFY = "sem_classify"
     SEM_TOPK = "sem_topk"
     SEM_MAP = "sem_map"
-    BLOCK_FILTER = "block_filter"
     SEM_AGG = "sem_agg"
     JOIN = "join"
     CARTESIAN_PRODUCT = "cp"
@@ -21,7 +20,6 @@ OPERATOR_LIST = [
     OpName.SEM_CLASSIFY,
     OpName.SEM_TOPK,
     OpName.SEM_MAP,
-    OpName.BLOCK_FILTER,
     OpName.SEM_AGG,
     OpName.JOIN,
     OpName.CARTESIAN_PRODUCT,
