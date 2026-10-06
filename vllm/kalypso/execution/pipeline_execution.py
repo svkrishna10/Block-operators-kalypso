@@ -542,6 +542,8 @@ class BlockingExecutor:
                 try:
                     out = await task()
                     results.append(out)
+                except Exception as exc:
+                    results.append(exc)
                 finally:
                     async with capacity_cond:
                         await manager.release(task.budget)
@@ -567,5 +569,9 @@ class BlockingExecutor:
 
         for w in workers:
             w.cancel()
+
+        for result in results:
+            if isinstance(result, Exception):
+                raise result
 
         return results

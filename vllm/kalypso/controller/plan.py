@@ -288,6 +288,16 @@ class SemanticPlan:
                             position=idx
                         )
                     )
+            
+            elif name == OpName.BLOCK_FILTER:
+                physical.append(
+                    ops.BlockFilter(
+                        instruction=args["prompt"],
+                        block_size=args.get("block_size", 1),
+                        max_tokens=args.get("max_tokens", 128),
+                        position=idx,
+                    )
+                )
 
             elif name == OpName.SEM_MAP:
                 physical.append(
