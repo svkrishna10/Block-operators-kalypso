@@ -299,6 +299,38 @@ class SemanticPlan:
                     )
                 )
 
+            elif name == OpName.BLOCK_MAP:
+                instruction = args.get("prompt", args.get("instruction"))
+                if not instruction:
+                    raise ValueError("block_map requires args.prompt or args.instruction")
+                physical.append(
+                    ops.BlockMap(
+                        instruction=instruction,
+                        block_size=args.get("block_size", 4),
+                        max_tokens=args.get("max_tokens", 512),
+                        max_retries=args.get("max_retries", 1),
+                        tokens_per_row=args.get("tokens_per_row", 32),
+                        position=idx,
+                    )
+                )
+
+            elif name == OpName.BLOCK_JOIN:
+                if not args.get("right_table"):
+                    raise ValueError("block_join requires args.right_table")
+                right_table = list(data._data_source(None, args["right_table"], None))
+                physical.append(
+                    ops.BlockJoin(
+                        instruction=args["instruction"],
+                        right_table=right_table,
+                        left_block_size=args.get("left_block_size", 1),
+                        right_block_size=args.get("right_block_size", 4),
+                        max_tokens=args.get("max_tokens", 512),
+                        max_retries=args.get("max_retries", 1),
+                        tokens_per_row=args.get("tokens_per_row", 8),
+                        position=idx,
+                    )
+                )
+
             elif name == OpName.SEM_MAP:
                 physical.append(
                     ops.SemMap(

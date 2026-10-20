@@ -5,6 +5,7 @@ from .joins import CartesianProduct, IndexedCartesianProduct, IndexedSearch
 from .classify import SemClassify
 from .reducers import SemAgg, SemTopK
 from .block import BlockFilter
+from .block_join_map import BlockJoin, BlockMap
 
 __all__ = [
     "BaseOp",
@@ -21,4 +22,6 @@ __all__ = [
     "SemAgg",
     "SemTopK",
     "BlockFilter",
+    "BlockJoin",
+    "BlockMap",
 ]

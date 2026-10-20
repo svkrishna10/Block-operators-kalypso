@@ -1,7 +1,6 @@
 from enum import Enum, auto
 from dataclasses import dataclass, field
 
-
 class OpName:
     SEM_FILTER = "sem_filter"
     SEM_JOIN = "sem_join"
@@ -9,6 +8,8 @@ class OpName:
     SEM_TOPK = "sem_topk"
     SEM_MAP = "sem_map"
     BLOCK_FILTER = "block_filter"
+    BLOCK_JOIN = "block_join"
+    BLOCK_MAP = "block_map"
     SEM_AGG = "sem_agg"
     JOIN = "join"
     CARTESIAN_PRODUCT = "cp"
@@ -22,6 +23,8 @@ OPERATOR_LIST = [
     OpName.SEM_TOPK,
     OpName.SEM_MAP,
     OpName.BLOCK_FILTER,
+    OpName.BLOCK_JOIN,
+    OpName.BLOCK_MAP,
     OpName.SEM_AGG,
     OpName.JOIN,
     OpName.CARTESIAN_PRODUCT,
