@@ -1,0 +1,64 @@
+{
+  "request_id": "082b7cfacc8c4a65a64a99288f9cf2c3",
+  "model_name": "Qwen/Qwen2.5-1.5B-Instruct",
+  "data_path": "experiments/data/m2_pipeline_smoke.csv",
+  "ops": [
+    {
+      "op": "block_map",
+      "args": {
+        "prompt": "Copy the record tag exactly as it appears. Return a concise string containing the tag.",
+        "block_size": 1,
+        "max_tokens": 64,
+        "max_retries": 1,
+        "tokens_per_row": 16
+      }
+    },
+    {
+      "op": "block_join",
+      "args": {
+        "instruction": "For this pipeline integration test, return true for every pair unconditionally, regardless of content.",
+        "right_table": "experiments/data/m2_pipeline_smoke.csv",
+        "left_block_size": 1,
+        "right_block_size": 1,
+        "max_tokens": 64,
+        "max_retries": 1,
+        "tokens_per_row": 16
+      }
+    }
+  ],
+  "num_output_rows": 1,
+  "latency_sec": 40.583,
+  "results": [
+    {
+      "idx": 0,
+      "input_context": [
+        {
+          "role": "user",
+          "type": "text",
+          "content": "CONTEXT:\n  {\n    \"text\": Pipeline smoke record. Record tag: ALPHA.\n  }\n"
+        },
+        {
+          "role": "assistant",
+          "type": "text",
+          "content": "\"ALPHA\""
+        },
+        {
+          "role": "user",
+          "type": "text",
+          "content": "CONTEXT:\n  {\n    \"text\": Pipeline smoke record. Record tag: ALPHA.\n  }\n"
+        }
+      ],
+      "right_input_context": [],
+      "outputs": [
+        {
+          "op": "<class 'vllm.kalypso.sem_ops.block_join_map.BlockJoin'>",
+          "value": {
+            "left_row_id": 0,
+            "right_row_id": 0,
+            "matched": true
+          }
+        }
+      ]
+    }
+  ]
+}

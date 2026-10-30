@@ -62,18 +62,19 @@ def parse_json_object(raw: str) -> dict[str, Any]:
         f"Malformed block JSON; response did not contain a valid JSON object: {raw[:240]!r}"
     )
 
-
+"""
 def validate_result_map(
     raw: str,
     expected_ids: Iterable[str],
     value_kind: str,
 ) -> dict[str, Any]:
-    """Validate exact ID coverage and value types for a block response.
+    
+    Validate exact ID coverage and value types for a block response.
 
     ``value_kind`` is ``"boolean"`` for join results or ``"text"`` for map
     results. String TRUE/FALSE values are normalized for robustness; no other
     coercions are performed.
-    """
+    
     expected_order = list(expected_ids)
     expected = set(expected_order)
     parsed = parse_json_object(raw)
@@ -107,7 +108,108 @@ def validate_result_map(
         else:
             raise ValueError(f"Unknown block value_kind: {value_kind!r}")
     return normalized
+"""
+def validate_result_map(
+    raw: str,
+    expected_ids: Iterable[str],
+    value_kind: str,
+) -> dict[str, Any]:
+    """Validate complete ID coverage and result types.
 
+    Accepts only unambiguous ID aliases and simple text wrappers.
+    Missing rows, unknown IDs, duplicate aliases, and ambiguous values fail.
+    """
+    expected_order = list(expected_ids)
+    expected = set(expected_order)
+    parsed = parse_json_object(raw)
+
+    # Canonicalize only known, unambiguous ID variants:
+    #   R00000004       -> R00000004
+    #   r00000004       -> R00000004
+    #   row_id_R00000004 -> R00000004
+    expected_by_fold = {row_id.casefold(): row_id for row_id in expected_order}
+    canonicalized: dict[str, Any] = {}
+
+    for key, value in parsed.items():
+        candidate = key
+        if candidate.casefold().startswith("row_id_"):
+            candidate = candidate[len("row_id_"):]
+
+        canonical_id = expected_by_fold.get(candidate.casefold())
+
+        if canonical_id is None:
+            # Keep unrecognized keys so they will fail the extra-ID check.
+            canonicalized[key] = value
+            continue
+
+        if canonical_id in canonicalized:
+            raise BlockValidationError(
+                f"Multiple output keys resolve to ID {canonical_id!r}"
+            )
+
+        canonicalized[canonical_id] = value
+
+    parsed = canonicalized
+    actual = set(parsed)
+
+    missing = sorted(expected - actual)
+    unexpected = sorted(actual - expected)
+    if missing or unexpected:
+        raise BlockValidationError(
+            f"ID coverage mismatch; missing={missing[:8]}, "
+            f"unexpected={unexpected[:8]}"
+        )
+
+    normalized: dict[str, Any] = {}
+
+    for row_id in expected_order:
+        value = parsed[row_id]
+
+        if value_kind == "boolean":
+            if type(value) is bool:
+                normalized[row_id] = value
+            elif (
+                isinstance(value, str)
+                and value.strip().lower() in {"true", "false"}
+            ):
+                normalized[row_id] = value.strip().lower() == "true"
+            else:
+                raise BlockValidationError(
+                    f"Expected Boolean for ID {row_id!r}; "
+                    f"got {type(value).__name__}"
+                )
+
+        elif value_kind == "text":
+            # Accept a single, clearly labeled text wrapper, such as
+            # {"summary": "..."}, or a one-element list containing text.
+            if isinstance(value, dict) and len(value) == 1:
+                wrapper_key, wrapper_value = next(iter(value.items()))
+                if (
+                    wrapper_key.casefold()
+                    in {"text", "summary", "output", "result", "answer"}
+                    and isinstance(wrapper_value, str)
+                ):
+                    value = wrapper_value
+
+            if (
+                isinstance(value, list)
+                and len(value) == 1
+                and isinstance(value[0], str)
+            ):
+                value = value[0]
+
+            if not isinstance(value, str):
+                raise BlockValidationError(
+                    f"Expected string for ID {row_id!r}; "
+                    f"got {type(value).__name__}"
+                )
+
+            normalized[row_id] = value.strip()
+
+        else:
+            raise ValueError(f"Unknown block value_kind: {value_kind!r}")
+
+    return normalized
 
 @dataclass(frozen=True)
 class _BlockRow:
@@ -207,6 +309,18 @@ class _BlockOperatorBase(BaseOp):
             "with every supplied ID as a key and no other keys. Do not use Markdown, "
             "code fences, comments, or explanatory text."
         )
+
+        if self._value_kind() == "boolean":
+            example = {
+                row.row_id: (idx % 2 == 0)
+                for idx, row in enumerate(rows)
+            }
+        else:
+            example = {
+                row.row_id: f"<mapped text for {row.row_id}>"
+                for row in rows
+            }
+
         if self._value_kind() == "boolean":
             contract += " Every value must be the JSON boolean true or false."
         else:
@@ -214,6 +328,7 @@ class _BlockOperatorBase(BaseOp):
 
         # Keep the data before the instruction, matching Kalypso's existing
         # data-first prompt layout and preserving the opportunity for prefix reuse.
+        """
         user_content = (
             f"INPUT RECORDS (JSON):\n{json.dumps(records, ensure_ascii=False)}\n\n"
             f"OPERATION: {self._operation_label()}\n"
@@ -221,6 +336,21 @@ class _BlockOperatorBase(BaseOp):
             f"OUTPUT CONTRACT: {contract}\n"
             "Return only the JSON object."
         )
+        """
+        user_content = (
+            f"INPUT RECORDS (JSON):\n"
+            f"{json.dumps(records, ensure_ascii=False)}\n\n"
+            f"OPERATION: {self._operation_label()}\n"
+            f"INSTRUCTION: {self.instruction}\n\n"
+            f"OUTPUT CONTRACT: {contract}\n\n"
+            "OUTPUT SHAPE EXAMPLE (illustrative values only):\n"
+            f"{json.dumps(example, ensure_ascii=False)}\n\n"
+            "Use the exact IDs shown in the example. Replace the example "
+            "values with the actual results for the input records. "
+            "Return only one valid JSON object. Do not add Markdown, "
+            "comments, or explanatory text."
+        )
+        
         return get_system_prompt() + [{
             "role": "user",
             "type": "text",
@@ -245,6 +375,29 @@ class _BlockOperatorBase(BaseOp):
         total_tokens = prompt_tokens + self._planned_max_tokens(rows, self.max_retries)
         return max(manager.bytes_per_token, total_tokens * manager.bytes_per_token)
 
+    def _structured_outputs_for_rows(
+        self, rows: list[_BlockRow]
+    ) -> dict[str, Any]:
+        """Constrain generation to this batch's exact result IDs and value types."""
+        kind = self._value_kind()
+        if kind == "boolean":
+            value_schema = {"type": "boolean"}
+        elif kind == "text":
+            value_schema = {"type": "string"}
+        else:
+            raise ValueError(f"Unknown block value_kind: {kind!r}")
+
+        expected_ids = [row.row_id for row in rows]
+        schema = {
+            "type": "object",
+            "properties": {
+                row_id: dict(value_schema) for row_id in expected_ids
+            },
+            "required": expected_ids,
+            "additionalProperties": False,
+        }
+        return {"json": schema}
+
     async def _execute_once(
         self,
         rows: list[_BlockRow],
@@ -267,6 +420,7 @@ class _BlockOperatorBase(BaseOp):
             max_tokens=self._planned_max_tokens(rows, retry_attempt),
             pin=False,
             priority=0,
+            structured_outputs=self._structured_outputs_for_rows(rows),
         )
         text = getattr(output, "text", "") or ""
         try:

@@ -25,11 +25,15 @@ class VLLMExecutor(LLMExecutor):
     def __init__(self, model: str):
         self.model = model
 
-    def _build_chat_request(self, message, max_tokens, pin, priority):
+    def _build_chat_request(
+        self, message, max_tokens, pin, priority,
+        structured_outputs: dict | None = None,
+    ):
         return ChatCompletionRequest(
             model=self.model,
             messages=message,
             max_tokens=min(max_tokens, 16384),
+            structured_outputs=structured_outputs,
             temperature=0.0,
             seed=42,
             top_p=1.0,
@@ -41,7 +45,10 @@ class VLLMExecutor(LLMExecutor):
         )
 
 
-    def _build_request(self, prompt, max_tokens, pin, priority):
+    def _build_request(
+        self, prompt, max_tokens, pin, priority,
+        structured_outputs: dict | None = None,
+    ):
         return CompletionRequest(
             model=self.model,
             prompt=prompt,
@@ -52,6 +59,7 @@ class VLLMExecutor(LLMExecutor):
             frequency_penalty=0.5,
             repetition_penalty=1.3,
             priority=priority,
+            structured_outputs=structured_outputs,
             vllm_xargs={"pinned": pin},
         )
 
@@ -61,7 +69,8 @@ class VLLMExecutor(LLMExecutor):
         prompt,
         max_tokens: int,
         pin: bool = False,
-        priority: int = 0
+        priority: int = 0,
+        structured_outputs: dict | None = None,
     ) -> CompletionResult:
         llm_func = self.complete if type(prompt) is str else self.chatcomplete
         return await llm_func(
@@ -70,6 +79,7 @@ class VLLMExecutor(LLMExecutor):
             max_tokens=max_tokens,
             pin=pin,
             priority=priority,
+            structured_outputs=structured_outputs,
         )
 
 
@@ -79,10 +89,13 @@ class VLLMExecutor(LLMExecutor):
         prompt,
         max_tokens: int,
         pin: bool = False,
-        priority: int = 0
+        priority: int = 0,
+        structured_outputs: dict | None = None,
     ) -> CompletionResult:
         from vllm.entrypoints.openai.api_server import create_chat_completion
-        req = self._build_chat_request(prompt, max_tokens, pin, priority)
+        req = self._build_chat_request(
+            prompt, max_tokens, pin, priority, structured_outputs
+        )
         prompt_items = len(prompt) if isinstance(prompt, list) else 1
         self._log(
             "[vllm-exec] "
@@ -134,10 +147,13 @@ class VLLMExecutor(LLMExecutor):
         prompt,
         max_tokens: int,
         pin: bool = False,
-        priority: int = 0
+        priority: int = 0,
+        structured_outputs: dict | None = None,
     ) -> CompletionResult:
         from vllm.entrypoints.openai.api_server import create_chat_completion
-        req = self._build_request(prompt, max_tokens, pin, priority)
+        req = self._build_request(
+            prompt, max_tokens, pin, priority, structured_outputs
+        )
         prompt_len = len(prompt) if isinstance(prompt, str) else 1
         self._log(
             "[vllm-exec] "

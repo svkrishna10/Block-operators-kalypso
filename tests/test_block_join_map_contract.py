@@ -73,7 +73,7 @@ def test_block_map_recovers_by_splitting_an_incomplete_block():
         def __init__(self):
             self.calls = 0
 
-        async def execute(self, raw_request, prompt, max_tokens, pin=False, priority=0):
+        async def execute(self, raw_request, prompt, max_tokens, pin=False, priority=0, structured_outputs=None):
             self.calls += 1
             content = prompt[-1]["content"]
             marker = "INPUT RECORDS (JSON):\n"
@@ -108,3 +108,136 @@ def test_block_map_recovers_by_splitting_an_incomplete_block():
         assert op.stats["validation_failures"] == 1
 
     asyncio.run(run())
+
+
+def test_run_batches_splits_over_budget_blocks_before_scheduling(monkeypatch):
+    """Oversized batches should split before entering the scheduler."""
+    import asyncio
+
+    from vllm.kalypso.budget import KVMemoryManager
+    from vllm.kalypso.sem_ops.block_join_map import (
+        BlockMap,
+        _BlockBatch,
+        _BlockRow,
+    )
+
+    class FakeBudgetManager:
+        def capacity(self):
+            return 100
+
+    manager = FakeBudgetManager()
+    monkeypatch.setattr(
+        KVMemoryManager, "get_instance", staticmethod(lambda: manager)
+    )
+
+    op = BlockMap("map each row", max_retries=0)
+    op._estimate_budget = lambda rows: 60 * len(rows)
+
+    captured = {}
+
+    async def fake_execute_tasks(seeds, task_builder, concurrency=100):
+        captured["seeds"] = seeds
+        return [
+            (
+                batch.batch_index,
+                {row.row_id: f"ok:{row.row_id}" for row in batch.rows},
+                None,
+            )
+            for batch in seeds
+        ]
+
+    import sys
+    from types import ModuleType
+
+    fake_pipeline_module = ModuleType(
+        "vllm.kalypso.execution.pipeline_execution"
+    )
+    fake_pipeline_module.BlockingExecutor = type(
+        "FakeBlockingExecutor",
+        (),
+        {"execute_tasks": staticmethod(fake_execute_tasks)},
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "vllm.kalypso.execution.pipeline_execution",
+        fake_pipeline_module,
+    )
+
+    rows = [
+        _BlockRow("R0", "first", 0),
+        _BlockRow("R1", "second", 1),
+    ]
+
+    result = asyncio.run(
+        op._run_batches([_BlockBatch(batch_index=42, rows=rows)])
+    )
+
+    prepared = captured["seeds"]
+    assert [len(batch.rows) for batch in prepared] == [1, 1]
+    assert [[row.row_id for row in batch.rows] for batch in prepared] == [
+        ["R0"],
+        ["R1"],
+    ]
+    assert op.stats["block_splits"] == 1
+    assert result == [
+        (0, {"R0": "ok:R0"}),
+        (1, {"R1": "ok:R1"}),
+    ]
+
+
+def test_run_batches_rejects_single_row_over_budget(monkeypatch):
+    """An unschedulable singleton must fail clearly instead of waiting forever."""
+    import asyncio
+
+    from vllm.kalypso.budget import KVMemoryManager
+    from vllm.kalypso.sem_ops.block_join_map import (
+        BlockMap,
+        _BlockBatch,
+        _BlockRow,
+    )
+
+    class FakeBudgetManager:
+        def capacity(self):
+            return 100
+
+    manager = FakeBudgetManager()
+    monkeypatch.setattr(
+        KVMemoryManager, "get_instance", staticmethod(lambda: manager)
+    )
+
+    op = BlockMap("map each row", max_retries=0)
+    op._estimate_budget = lambda rows: 101
+    scheduler_called = False
+
+    async def fake_execute_tasks(seeds, task_builder, concurrency=100):
+        nonlocal scheduler_called
+        scheduler_called = True
+        return []
+
+    import sys
+    from types import ModuleType
+
+    fake_pipeline_module = ModuleType(
+        "vllm.kalypso.execution.pipeline_execution"
+    )
+    fake_pipeline_module.BlockingExecutor = type(
+        "FakeBlockingExecutor",
+        (),
+        {"execute_tasks": staticmethod(fake_execute_tasks)},
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "vllm.kalypso.execution.pipeline_execution",
+        fake_pipeline_module,
+    )
+
+    batch = _BlockBatch(
+        batch_index=0,
+        rows=[_BlockRow("R0", "large input", 0)],
+    )
+
+    with pytest.raises(MemoryError, match="exceeding manager capacity"):
+        asyncio.run(op._run_batches([batch]))
+
+    assert not scheduler_called
+    assert op.stats["block_splits"] == 0

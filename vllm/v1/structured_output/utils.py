@@ -113,17 +113,34 @@ def apply_grammar_bitmask(
     # since the bitmask is already aligned with the logits.
     skip_out_indices = len(out_indices) == logits.shape[0]
 
-    index_tensor = None
+    indices: torch.Tensor | list[int] | None = None
     if not skip_out_indices:
-        # xgrammar expects a python list of indices but it will actually work with
-        # a tensor. If we copy the tensor ourselves here we can do it in a non_blocking
-        # manner and there should be no cpu sync within xgrammar.
-        index_tensor = torch.tensor(
-            out_indices, dtype=torch.int32, device="cpu", pin_memory=True
-        )
-        index_tensor = index_tensor.to(logits.device, non_blocking=True)
+        if logits.device.type == "cpu":
+            indices = list(out_indices)
+        else:
+            index_tensor = torch.tensor(
+                out_indices,
+                dtype=torch.int32,
+                device="cpu",
+                pin_memory=True,
+            )
+            indices = index_tensor.to(logits.device, non_blocking=True)
 
-    xgr.apply_token_bitmask_inplace(logits, grammar_bitmask, indices=index_tensor)
+    if logits.device.type == "cpu":
+        if logits.dtype != torch.float32:
+            logits_fp32 = logits.to(torch.float32)
+            xgr.apply_token_bitmask_inplace(
+                logits_fp32, grammar_bitmask, indices=indices
+            )
+            logits.copy_(logits_fp32.to(dtype=logits.dtype))
+        else:
+            xgr.apply_token_bitmask_inplace(
+                logits, grammar_bitmask, indices=indices
+            )
+    else:
+        xgr.apply_token_bitmask_inplace(
+            logits, grammar_bitmask, indices=indices
+        )
 
 
 class OutlinesVocabulary:
